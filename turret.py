@@ -134,6 +134,79 @@ class VideoUtils(object):
             c = VideoUtils.get_best_contour(thresh.copy(), 5000)
 
             if c is not None:
+                
+                ###### classify image and test for dog ######
+                
+                classes = None
+
+                with open(args.classes, 'r') as f:
+                    classes = [line.strip() for line in f.readlines()]
+
+                COLORS = np.random.uniform(0, 255, size=(len(classes), 3))
+
+                net = cv2.dnn.readNet(args.weights, args.config)
+
+                blob = cv2.dnn.blobFromImage(image, scale, (416,416), (0,0,0), True, crop=False)
+
+                net.setInput(blob)
+
+                outs = net.forward(get_output_layers(net))
+
+                class_ids = []
+                confidences = []
+                boxes = []
+                conf_threshold = 0.5
+                nms_threshold = 0.4
+
+
+                for out in outs:
+                    for detection in out:
+                        scores = detection[5:]
+                        class_id = np.argmax(scores)
+                        confidence = scores[class_id]
+                        if confidence > 0.5:
+                            center_x = int(detection[0] * Width)
+                            center_y = int(detection[1] * Height)
+                            w = int(detection[2] * Width)
+                            h = int(detection[3] * Height)
+                            x = center_x - w / 2
+                            y = center_y - h / 2
+                            class_ids.append(class_id)
+                            confidences.append(float(confidence))
+                            boxes.append([x, y, w, h])
+
+
+                indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, nms_threshold)
+
+                for i in indices:
+                    i = i[0]
+                    box = boxes[i]
+                    x = box[0]
+                    y = box[1]
+                    w = box[2]
+                    h = box[3]
+                    draw_prediction(image, class_ids[i], confidences[i], round(x), round(y), round(x+w), round(y+h))
+                
+                #### check for tigger using dog or cat classes
+                dog_index = None
+                detected_classes = [classes[class_id] for class_id in class_ids]
+                if "dog" in detected_classes:
+                    dog_index = detected_classes.index("dog")
+                elif "cat" in detected_classes:
+                    dog_index = detected_classes.index("dog")
+                if dog_index != None and "couch" in detected_classes:
+                    couch_index = detected_classes.index("couch")
+
+                    #### compare center_y for dog and couch
+                    dog_center = boxes[dog_index][1] + boxes[dog_index][3]/2
+                    couch_center = boxes[couch_index][1] + boxes[couch_index][3] / 2
+                    if dog_center > couch_center:
+
+                        #### send center coordinates to turret
+                    
+                    
+                
+                
                 # compute the bounding box for the contour, draw it on the frame,
                 # and update the text
                 (x, y, w, h) = cv2.boundingRect(c)
