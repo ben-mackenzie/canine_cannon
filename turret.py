@@ -193,7 +193,7 @@ class VideoUtils(object):
                 if "dog" in detected_classes:
                     dog_index = detected_classes.index("dog")
                 elif "cat" in detected_classes:
-                    dog_index = detected_classes.index("dog")
+                    dog_index = detected_classes.index("cat")
                 if dog_index != None and "couch" in detected_classes:
                     couch_index = detected_classes.index("couch")
 
@@ -204,8 +204,13 @@ class VideoUtils(object):
 
                         #### send center coordinates to turret
                     
+                    dog_box = boxes[dog_index]
+                    x = dog_box[0]
+                    y = dog_box[1]
+                    w = dog_box[2]
+                    h = dog_box[3]
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                     
-                
                 
                 # compute the bounding box for the contour, draw it on the frame,
                 # and update the text
