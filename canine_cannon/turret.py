@@ -201,6 +201,7 @@ class VideoUtils(object):
                     dog_center = boxes[dog_index][1] + boxes[dog_index][3]/2
                     couch_center = boxes[couch_index][1] + boxes[couch_index][3] / 2
                     if dog_center > couch_center:
+                        pass
 
                         #### send center coordinates to turret
                     

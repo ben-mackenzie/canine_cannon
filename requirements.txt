@@ -1,0 +1,5 @@
+imutils
+RPI.GPIO
+matplotlib
+git+https://github.com/adafruit/Adafruit-Motor-HAT-Python-Library
+
