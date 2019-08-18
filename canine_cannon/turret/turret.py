@@ -3,20 +3,21 @@ try:
 except Exception as e:
     print("Warning: OpenCV not installed. To use motion detection, make sure you've properly configured OpenCV.")
 
-import time
-import thread
-import threading
 import atexit
+import contextlib
 import sys
 import termios
-import contextlib
+import thread
+import threading
+import time
 
+from Adafruit_MotorHAT import Adafruit_MotorHAT, Adafruit_DCMotor, Adafruit_StepperMotor
 import imutils
 import RPi.GPIO as GPIO
-from Adafruit_MotorHAT import Adafruit_MotorHAT, Adafruit_DCMotor, Adafruit_StepperMotor
 
 
-### User Parameters ###
+########################
+# User Parameters
 
 MOTOR_X_REVERSED = False
 MOTOR_Y_REVERSED = False
@@ -25,8 +26,7 @@ MAX_STEPS_X = 30
 MAX_STEPS_Y = 15
 
 RELAY_PIN = 22
-
-#######################
+########################
 
 
 @contextlib.contextmanager
@@ -54,7 +54,7 @@ class VideoUtils(object):
     def live_video(camera_port=0):
         """
         Opens a window with live video.
-        :param camera:
+        :param camera_port:
         :return:
         """
 
@@ -81,8 +81,8 @@ class VideoUtils(object):
         time.sleep(0.25)
 
         # initialize the first frame in the video stream
-        firstFrame = None
-        tempFrame = None
+        first_frame = None
+        second_frame = None
         count = 0
 
         # loop over the frames of the video
@@ -103,20 +103,20 @@ class VideoUtils(object):
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
             # if the first frame is None, initialize it
-            if firstFrame is None:
-                print "Waiting for video to adjust..."
-                if tempFrame is None:
-                    tempFrame = gray
+            if first_frame is None:
+                print("Waiting for video to adjust...")
+                if second_frame is None:
+                    second_frame = gray
                     continue
                 else:
-                    delta = cv2.absdiff(tempFrame, gray)
-                    tempFrame = gray
+                    delta = cv2.absdiff(second_frame, gray)
+                    second_frame = gray
                     tst = cv2.threshold(delta, 5, 255, cv2.THRESH_BINARY)[1]
                     tst = cv2.dilate(tst, None, iterations=2)
                     if count > 30:
-                        print "Done.\n Waiting for motion."
+                        print("Done.\n Waiting for motion.")
                         if not cv2.countNonZero(tst) > 0:
-                            firstFrame = gray
+                            first_frame = gray
                         else:
                             continue
                     else:
@@ -125,8 +125,8 @@ class VideoUtils(object):
 
             # compute the absolute difference between the current frame and
             # first frame
-            frameDelta = cv2.absdiff(firstFrame, gray)
-            thresh = cv2.threshold(frameDelta, 25, 255, cv2.THRESH_BINARY)[1]
+            frame_delta = cv2.absdiff(first_frame, gray)
+            thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
 
             # dilate the thresholded image to fill in holes, then find contours
             # on thresholded image
@@ -134,11 +134,7 @@ class VideoUtils(object):
             c = VideoUtils.get_best_contour(thresh.copy(), 5000)
 
             if c is not None:
-                
-                ###### classify image and test for dog ######
-                
-                classes = None
-
+                # classify image and test for dog
                 with open(args.classes, 'r') as f:
                     classes = [line.strip() for line in f.readlines()]
 
@@ -146,7 +142,7 @@ class VideoUtils(object):
 
                 net = cv2.dnn.readNet(args.weights, args.config)
 
-                blob = cv2.dnn.blobFromImage(image, scale, (416,416), (0,0,0), True, crop=False)
+                blob = cv2.dnn.blobFromImage(image, scale, (416, 416), (0, 0, 0), True, crop=False)
 
                 net.setInput(blob)
 
@@ -157,7 +153,6 @@ class VideoUtils(object):
                 boxes = []
                 conf_threshold = 0.5
                 nms_threshold = 0.4
-
 
                 for out in outs:
                     for detection in out:
@@ -175,7 +170,6 @@ class VideoUtils(object):
                             confidences.append(float(confidence))
                             boxes.append([x, y, w, h])
 
-
                 indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, nms_threshold)
 
                 for i in indices:
@@ -187,23 +181,24 @@ class VideoUtils(object):
                     h = box[3]
                     draw_prediction(image, class_ids[i], confidences[i], round(x), round(y), round(x+w), round(y+h))
                 
-                #### check for tigger using dog or cat classes
+                # check for tigger using dog or cat classes
                 dog_index = None
                 detected_classes = [classes[class_id] for class_id in class_ids]
                 if "dog" in detected_classes:
                     dog_index = detected_classes.index("dog")
                 elif "cat" in detected_classes:
                     dog_index = detected_classes.index("cat")
-                if dog_index != None and "couch" in detected_classes:
+
+                if dog_index is not None and "couch" in detected_classes:
                     couch_index = detected_classes.index("couch")
 
-                    #### compare center_y for dog and couch
+                    # compare center_y for dog and couch
                     dog_center = boxes[dog_index][1] + boxes[dog_index][3]/2
                     couch_center = boxes[couch_index][1] + boxes[couch_index][3] / 2
                     if dog_center > couch_center:
                         pass
 
-                        #### send center coordinates to turret
+                        # send center coordinates to turret
                     
                     dog_box = boxes[dog_index]
                     x = dog_box[0]
@@ -211,8 +206,7 @@ class VideoUtils(object):
                     w = dog_box[2]
                     h = dog_box[3]
                     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    
-                
+
                 # compute the bounding box for the contour, draw it on the frame,
                 # and update the text
                 (x, y, w, h) = cv2.boundingRect(c)
@@ -276,12 +270,12 @@ class Turret(object):
         Waits for input to calibrate the turret's axis
         :return:
         """
-        print "Please calibrate the tilt of the gun so that it is level. Commands: (w) moves up, " \
-              "(s) moves down. Press (enter) to finish.\n"
+        print("Please calibrate the tilt of the gun so that it is level. Commands: (w) moves up, "
+              "(s) moves down. Press (enter) to finish.\n")
         self.__calibrate_y_axis()
 
-        print "Please calibrate the yaw of the gun so that it aligns with the camera. Commands: (a) moves left, " \
-              "(d) moves right. Press (enter) to finish.\n"
+        print("Please calibrate the yaw of the gun so that it aligns with the camera. Commands: (a) moves left, "
+              "(d) moves right. Press (enter) to finish.\n")
         self.__calibrate_x_axis()
 
         print "Calibration finished."
@@ -312,7 +306,7 @@ class Turret(object):
                         break
 
             except (KeyboardInterrupt, EOFError):
-                print "Error: Unable to calibrate turret. Exiting..."
+                print("Error: Unable to calibrate turret. Exiting...")
                 sys.exit(1)
 
     def __calibrate_y_axis(self):
@@ -341,7 +335,7 @@ class Turret(object):
                         break
 
             except (KeyboardInterrupt, EOFError):
-                print "Error: Unable to calibrate turret. Exiting..."
+                print("Error: Unable to calibrate turret. Exiting...")
                 sys.exit(1)
 
     def motion_detection(self, show_video=False):
@@ -359,8 +353,8 @@ class Turret(object):
         target_steps_x = (2*MAX_STEPS_X * (x + w / 2) / v_w) - MAX_STEPS_X
         target_steps_y = (2*MAX_STEPS_Y*(y+h/2) / v_h) - MAX_STEPS_Y
 
-        print "x: %s, y: %s" % (str(target_steps_x), str(target_steps_y))
-        print "current x: %s, current y: %s" % (str(self.current_x_steps), str(self.current_y_steps))
+        print("x: %s, y: %s" % (str(target_steps_x), str(target_steps_y)))
+        print("current x: %s, current y: %s" % (str(self.current_x_steps), str(self.current_y_steps)))
 
         t_x = threading.Thread()
         t_y = threading.Thread()
@@ -416,7 +410,7 @@ class Turret(object):
         Turret.move_forward(self.sm_x, 1)
         Turret.move_forward(self.sm_y, 1)
 
-        print 'Commands: Pivot with (a) and (d). Tilt with (w) and (s). Exit with (q)\n'
+        print('Commands: Pivot with (a) and (d). Tilt with (w) and (s). Exit with (q)\n')
         with raw_mode(sys.stdin):
             try:
                 while True:
@@ -486,6 +480,7 @@ class Turret(object):
         self.mh.getMotor(3).run(Adafruit_MotorHAT.RELEASE)
         self.mh.getMotor(4).run(Adafruit_MotorHAT.RELEASE)
 
+
 if __name__ == "__main__":
     t = Turret(friendly_mode=False)
 
@@ -502,4 +497,4 @@ if __name__ == "__main__":
             thread.start_new_thread(VideoUtils.live_video, ())
         t.interactive()
     else:
-        print "Unknown input mode. Please choose a number (1) or (2)"
+        print("Unknown input mode. Please choose a number (1) or (2)")
